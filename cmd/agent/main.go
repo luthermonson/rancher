@@ -56,17 +56,65 @@ func main() {
 
 	var err error
 
-	if os.Getenv("CLUSTER_CLEANUP") == "true" {
-		err = clean.Cluster()
-	} else if os.Getenv("BINDING_CLEANUP") == "true" {
-		err = clean.Bindings()
+	if len(os.Args) > 1 {
+		err = runArgs()
 	} else {
-		err = run()
+		if os.Getenv("CLUSTER_CLEANUP") == "true" {
+			err = clean.Cluster()
+		} else if os.Getenv("NODE_CLEANUP_JOB") == "true" {
+			err = clean.Job()
+		} else if os.Getenv("NODE_CLEANUP") == "true" {
+			err = clean.Node()
+		} else if os.Getenv("BINDING_CLEANUP") == "true" {
+			err = clean.Bindings()
+		} else {
+			err = run()
+		}
 	}
 
 	if err != nil {
 		logrus.Fatal(err)
 	}
+}
+
+func runArgs() error {
+	fmt.Printf("%+v", os.Args[1])
+	switch os.Args[1] {
+	case "clean":
+		return runClean()
+	default:
+		return run()
+	}
+}
+
+func runClean() error {
+	if len(os.Args) > 2 {
+		switch os.Args[2] {
+		case "job":
+			return clean.Job()
+		case "script":
+			fmt.Print(clean.Script())
+			return nil
+		case "node":
+			return clean.Node()
+		case "link":
+		case "links":
+			return clean.Links()
+		case "cluster":
+			return clean.Cluster()
+		case "path":
+		case "paths":
+			return clean.Paths()
+		case "iptable":
+		case "iptables":
+			return clean.IpTables()
+		case "binding":
+		case "bindings":
+			return clean.Bindings()
+		}
+	}
+
+	return clean.Node()
 }
 
 func initFeatures() {
@@ -115,7 +163,7 @@ func cleanup(ctx context.Context) error {
 		return nil
 	}
 
-	c, err := client.NewEnvClient()
+	c, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return err
 	}
@@ -378,7 +426,7 @@ func reconcileKubelet(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-	c, err := client.NewEnvClient()
+	c, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return false, err
 	}

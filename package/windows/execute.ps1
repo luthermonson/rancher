@@ -94,6 +94,21 @@ if ($CLUSTER_CLEANUP -eq "true")
     exit 0
 }
 
+$NODE_CLEANUP_JOB = Get-Env -Key "NODE_CLEANUP_JOB"
+if ($NODE_CLEANUP_JOB -eq "true")
+{
+    Start-Process -NoNewWindow -Wait -FilePath "c:\etc\rancher\agent.exe"
+    exit 0
+}
+
+
+$NODE_CLEANUP = Get-Env -Key "NODE_CLEANUP"
+if ($NODE_CLEANUP -eq "true")
+{
+    Start-Process -NoNewWindow -Wait -FilePath "c:\etc\rancher\agent.exe"
+    exit 0
+}
+
 # init parameters
 $CATTLE_SERVER = Get-Env -Key "CATTLE_SERVER"
 $CATTLE_TOKEN = Get-Env -Key "CATTLE_TOKEN"

@@ -92,6 +92,7 @@ func (c *Controller) Updated(nodePool *v3.NodePool) (runtime.Object, error) {
 	obj, err := v32.NodePoolConditionUpdated.Do(nodePool, func() (runtime.Object, error) {
 		anno, _ := nodePool.Annotations[ReconcileAnnotation]
 		if anno == "" {
+
 			go c.deleteBadNodes(nodePool)
 			if c.needsReconcile(nodePool) {
 				logrus.Debugf("[nodepool] reconcile needed for %s", nodePool.Name)
@@ -336,7 +337,7 @@ func (c *Controller) nodes(nodePool *v3.NodePool, simulate bool) ([]*v3.Node, er
 }
 
 func (c *Controller) deleteBadNodes(nodePool *v3.NodePool) {
-	allNodes, err := c.nodes(nodePool, false)
+	allNodes, err := c.nodes(nodePool, true)
 	if err != nil {
 		logrus.Errorf("[nodepool] error pulling nodes for bad node deletion: %s", err)
 	}
