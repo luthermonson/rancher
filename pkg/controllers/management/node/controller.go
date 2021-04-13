@@ -540,9 +540,9 @@ func (m *Lifecycle) scaledown(obj *v3.Node) (runtime.Object, error) {
 	if scaledown.Before(time.Now()) {
 		logrus.Debugf("[node] enqueing nodepool %s for scaledown immediately", pool.Name)
 		m.nodePoolController.Enqueue(pool.Namespace, pool.Name)
-	} else if after := scaledown.Sub(time.Now()); after > 0 {
+	} else if after := scaledown.Sub(time.Now()) + (5 * time.Second); after > 0 {
 		logrus.Debugf("[node] enqueing nodepool %s for scaledown in %s", pool.Name, after)
-		m.nodePoolController.EnqueueAfter(pool.Namespace, pool.Name, after+(5*time.Second))
+		m.nodePoolController.EnqueueAfter(pool.Namespace, pool.Name, after)
 	}
 
 	copy := obj.DeepCopy()
