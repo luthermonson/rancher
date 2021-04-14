@@ -371,6 +371,9 @@ func (c *Controller) createOrCheckNodes(nodePool *v3.NodePool, allNodes []*v3.No
 					quantity--
 					continue
 				}
+
+				// scaledown happening in the future, enqueue after to check again later
+				c.NodePoolController.EnqueueAfter(nodePool.Namespace, nodePool.Name, scaledown.Sub(time.Now()))
 			}
 		}
 
