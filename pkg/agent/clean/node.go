@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"runtime"
 	"strings"
 	"time"
 
@@ -218,9 +217,6 @@ func cleanDocker(ctx context.Context, c *client.Client) error {
 }
 
 func getPrefixPath() string {
-	if runtime.GOOS == "windows" {
-		return os.Getenv("WINDOWS_PREFIX_PATH")
-	}
 	return os.Getenv("PREFIX_PATH")
 }
 

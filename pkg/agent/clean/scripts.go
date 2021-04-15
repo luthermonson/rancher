@@ -184,7 +184,7 @@ run
 `
 
 const PowershellScript = `#Requires -RunAsAdministrator
-<# 
+<#
 .SYNOPSIS 
     Cleans Rancher managed Windows Worker Nodes. Backup your data. Use at your own risk.
 .DESCRIPTION 
@@ -194,41 +194,55 @@ const PowershellScript = `#Requires -RunAsAdministrator
     Backup your data.
     Use at your own risk.
 .EXAMPLE 
-    windows-clean.ps1
+    cleanup.ps1    
     Clean the windows host of all Rancher related data (kubernetes, docker, network).
+
+    cleanup.ps1 -Tasks Docker
+    Cleans the windows host of all Rancher docker related data.
+
+    cleanup.ps1 -Tasks Docker,Network
+    Cleans the windows host of all Rancher docker and network related data.
 #>
+[CmdletBinding()]
+param (
+    [Parameter()]
+    [ValidateSet("Docker", "Kubernetes", "Firewall", "Rancher", "Network", "Paths")]
+    [string]
+    $Tasks = ("Docker", "Kubernetes", "Firewall", "Rancher", "Network", "Paths")
+)
+
 $ErrorActionPreference = 'Stop'
 $WarningPreference = 'SilentlyContinue'
 $VerbosePreference = 'SilentlyContinue'
 $DebugPreference = 'SilentlyContinue'
 $InformationPreference = 'SilentlyContinue'
-function Check-Command($cmdname)
-{
+
+function Test-Command($cmdname) {
     return [bool](Get-Command -Name $cmdname -ErrorAction SilentlyContinue)
 }
-function Log-Info
-{
+
+function Log-Info {
     Write-Host -NoNewline -ForegroundColor Blue "INFO: "
     Write-Host -ForegroundColor Gray ("{0,-44}" -f ($args -join " "))
 }
-function Log-Warn
-{
+
+function Log-Warn {
     Write-Host -NoNewline -ForegroundColor DarkYellow "WARN: "
     Write-Host -ForegroundColor Gray ("{0,-44}" -f ($args -join " "))
 }
-function Log-Error
-{
+
+function Log-Error {
     Write-Host -NoNewline -ForegroundColor DarkRed "ERRO: "
     Write-Host -ForegroundColor Gray ("{0,-44}" -f ($args -join " "))
 }
-function Log-Fatal
-{
+
+function Log-Fatal {
     Write-Host -NoNewline -ForegroundColor DarkRed "FATA: "
     Write-Host -ForegroundColor Gray ("{0,-44}" -f ($args -join " "))
     exit 255
 }
-function Get-VmComputeNativeMethods()
-{
+
+function Get-VmComputeNativeMethods() {
     $ret = 'VmCompute.PrivatePInvoke.NativeMethods' -as [type]
     if (-not $ret) {
         $signature = @'
@@ -239,8 +253,8 @@ public static extern void HNSCall([MarshalAs(UnmanagedType.LPWStr)] string metho
     }
     return $ret
 }
-function Invoke-HNSRequest
-{
+
+function Invoke-HNSRequest {
     param
     (
         [ValidateSet('GET', 'DELETE')]
@@ -267,93 +281,176 @@ function Invoke-HNSRequest
             $output = ($response | ConvertFrom-Json)
             if ($output.Error) {
                 Log-Error $output;
-            } else {
+            }
+            else {
                 $output = $output.Output;
             }
-        } catch {
+        }
+        catch {
             Log-Error $_.Exception.Message
         }
     }
     return $output;
 }
-# cleanup
-Log-Info "Start cleaning ..."
-# clean up docker container: docker rm -fv $(docker ps -qa)
-$containers = $(docker.exe ps -aq)
-if ($containers)
-{
-    Log-Info "Cleaning up docker containers ..."
-    $errMsg = $($containers | ForEach-Object {docker.exe rm -f $_})
-    if (-not $?) {
-        Log-Warn "Could not remove docker containers: $errMsg"
+
+function Remove-DockerContainers {
+    $containers = $(docker.exe ps -aq)
+    if ($containers) {
+        Log-Info "Cleaning up docker containers ..."
+        $errMsg = $($containers | ForEach-Object { docker.exe rm -f $_ })
+        if (-not $?) {
+            Log-Warn "Could not remove docker containers: $errMsg"
+        }
+        # wait a while for rancher-wins to clean up processes
+        Start-Sleep -Seconds 10
     }
-    # wait a while for rancher-wins to clean up processes
-    Start-Sleep -Seconds 10
-}
-# clean up kubernetes components processes
-Get-Process -ErrorAction Ignore -Name "rancher-wins-*" | ForEach-Object {
-    Log-Info "Stopping process $($_.Name) ..."
-    $_ | Stop-Process -ErrorAction Ignore -Force
-}
-# clean up firewall rules
-Get-NetFirewallRule -PolicyStore ActiveStore -Name "rancher-wins-*" -ErrorAction Ignore | ForEach-Object {
-    Log-Info "Cleaning up firewall rule $($_.Name) ..."
-    $_ | Remove-NetFirewallRule -ErrorAction Ignore | Out-Null
-}
-# clean up rancher-wins service
-Get-Service -Name "rancher-wins" -ErrorAction Ignore | Where-Object {$_.Status -eq "Running"} | ForEach-Object {
-    Log-Info "Stopping rancher-wins service ..."
-    $_ | Stop-Service -Force -ErrorAction Ignore
-    Log-Info "Unregistering rancher-wins service ..."
-    Push-Location c:\etc\rancher
-    $errMsg = $(.\wins.exe srv app run --unregister)
-    if (-not $?) {
-        Log-Warn "Could not unregister: $errMsg"
-    }
-    Pop-Location
 }
 
-try {
-    Get-HnsNetwork | Where { $_.Name -eq 'vxlan0' -or $_.Name -eq 'cbr0' -or $_.Name -eq 'nat'} | Select Name, ID | ForEach-Object {
-        Log-Info "Cleaning up HnsNetwork $($_.Name) ..."
-        hnsdiag delete networks ($_.ID)
+function Remove-Kubernetes {
+    Get-Process -ErrorAction Ignore -Name "rancher-wins-*" | ForEach-Object {
+        Log-Info "Stopping process $($_.Name) ..."
+        $_ | Stop-Process -ErrorAction Ignore -Force
     }
-    Invoke-HNSRequest -Method "GET" -Type "policylists" | Where-Object {-not [string]::IsNullOrEmpty($_.Id)} | ForEach-Object {
-Log-Info "Cleaning up HNSPolicyList $($_.Id) ..."
-Invoke-HNSRequest -Method "DELETE" -Type "policylists" -Id $_.Id
-    }
-    Get-HnsEndpoint  | Select Name, ID | ForEach-Object {
-        Log-Info "Cleaning up HnsEndpoint $($_.Name) ..."
-        hnsdiag delete endpoints ($_.ID)
-    }
-}
-catch {
-    Log-Warn "Could not clean: $($_.Exception.Message)"
 }
 
-# clean up data
-Get-Item -ErrorAction Ignore -Path @(
-    "c:\run\*"
-    "c:\opt\*"
-    "c:\var\*"
-    "c:\etc\*"
-    "c:\ProgramData\docker\containers\*"
-) | ForEach-Object {
-    Log-Info "Cleaning up data $($_.FullName) ..."
+function Remove-FirewallRules {
+    Get-NetFirewallRule -PolicyStore ActiveStore -Name "rancher-wins-*" -ErrorAction Ignore | ForEach-Object {
+        Log-Info "Cleaning up firewall rule $($_.Name) ..."
+        $_ | Remove-NetFirewallRule -ErrorAction Ignore | Out-Null
+    }
+}
+
+function Remove-RancherWins {
+    Get-Service -Name "rancher-wins" -ErrorAction Ignore | Where-Object { $_.Status -eq "Running" } | ForEach-Object {
+        Log-Info "Stopping rancher-wins service ..."
+        $_ | Stop-Service -Force -ErrorAction Ignore
+        Log-Info "Unregistering rancher-wins service ..."
+        Push-Location c:\etc\rancher
+        $errMsg = $(.\wins.exe srv app run --unregister)
+        if (-not $?) {
+            Log-Warn "Could not unregister: $errMsg"
+        }
+        Pop-Location
+    }
+}
+
+function Remove-Links {
     try {
-        $_ | Remove-Item -ErrorAction Ignore -Recurse -Force | Out-Null
-    } catch {
+        Get-HnsNetwork | Where-Object { $_.Name -eq 'vxlan0' -or $_.Name -eq 'cbr0' -or $_.Name -eq 'nat' } | Select-Object Name, ID | ForEach-Object {
+            Log-Info "Cleaning up HnsNetwork $($_.Name) ..."
+            hnsdiag delete networks ($_.ID)
+        }
+        Invoke-HNSRequest -Method "GET" -Type "policylists" | Where-Object { -not [string]::IsNullOrEmpty($_.Id) } | ForEach-Object {
+            Log-Info "Cleaning up HNSPolicyList $($_.Id) ..."
+            Invoke-HNSRequest -Method "DELETE" -Type "policylists" -Id $_.Id
+        }
+        Get-HnsEndpoint  | Select-Object Name, ID | ForEach-Object {
+            Log-Info "Cleaning up HnsEndpoint $($_.Name) ..."
+            hnsdiag delete endpoints ($_.ID)
+        }
+    }
+    catch {
         Log-Warn "Could not clean: $($_.Exception.Message)"
     }
 }
-try{
-    Log-Info "Restarting the Docker service"
-    Stop-Service docker
-    Start-Sleep -Seconds 5
-    start-service docker
+
+function Remove-Paths {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory, ValueFromPipeline)]
+        [string]
+        $HostPathPrefix
+    )
+    PROCESS {
+        $runPath = Join-Path $HostPathPrefix "run\*"
+        $optPath = Join-Path $HostPathPrefix "opt\*"
+        $varPath = Join-Path $HostPathPrefix "var\*"
+        $etcPath = Join-Path $HostPathPrefix "etc\*"
+
+        Get-Item -ErrorAction Ignore -Path @(
+            $runPath
+            $optPath
+            $varPath
+            $etcPath
+            "c:\ProgramData\docker\containers\*"
+        ) | ForEach-Object {
+            Log-Info "Cleaning up data $($_.FullName) ..."
+            try {
+                $_ | Remove-Item -ErrorAction Ignore -Recurse -Force | Out-Null
+            }
+            catch {
+                Log-Warn "Could not clean: $($_.Exception.Message)"
+            }   
+        }
+            
+        try {
+            Log-Info "Restarting the Docker service"
+            Stop-Service docker
+            Start-Sleep -Seconds 5
+            Start-Service docker
+        }
+        catch {
+            Log-Fatal "Could not restart docker: $($_.Exception.Message)"
+        }
+    }
 }
-catch {
-    Log-Fatal "Could not restart docker: $($_.Exception.Message)"
+
+function Get-PrefixPath {
+    Log-Info "Getting Windows prefix path"
+    $rkeDefaultPrefix = "c:/"
+    $dockerStatus = (docker info) | Out-Null
+    try {
+        $hostPrefixPath = (docker exec kubelet pwsh -c 'Get-ChildItem env:' 2>&1 | findstr RKE_NODE_PREFIX_PATH).Trim("RKE_NODE_PREFIX_PATH").Trim(" ")
+
+        if ($dockerstatus.ExitCode -ne 0 -and !$hostPrefixPath) {
+            $hostPrefixPath = "c:\"
+        }
+        elseif ($hostPrefixPath) {
+            if ($rkeDefaultPrefix -ine $hostPrefixPath) {
+                $hostPrefixPath = $hostPrefixPath -Replace "/", "\"
+                if ($hostPrefixPath.Chars($hostPrefixPath.Length - 1) -ne '\') {
+                    $hostPrefixPath = $( $hostPrefixPath + '\' )
+                }
+            }
+        }
+        return $hostPrefixPath
+    }
+    catch {
+        Log-Warn "Unable to find the host prefix path, it has been set to the default: 'c:\'"
+    }
 }
+
+# cleanup
+Log-Info "Start cleaning ..."
+
+foreach ($task in $Tasks) {
+    switch ($task) {
+        "Docker" {
+            # clean up docker container: docker rm -fv $(docker ps -qa)
+            Remove-DockerContainers
+        }
+        "Kubernetes" {
+            # clean up kubernetes components processes
+            Remove-Kubernetes
+        }
+        "Firewall" {
+            # clean up firewall rules
+            Remove-FirewallRules
+        }
+        "Rancher" {
+            # clean up rancher-wins service
+            Remove-RancherWins
+        }
+        "Network" {
+            # clean up links
+            Remove-Links
+        }
+        "Paths" {
+            # clean up data
+            Get-PrefixPath | Remove-Paths
+        }
+    }
+} 
+
 Log-Info "Finished!"
 `

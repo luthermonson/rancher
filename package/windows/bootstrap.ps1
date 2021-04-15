@@ -89,7 +89,6 @@ try
 {
     Copy-Item -Force -Destination "$($hostPrefixPath)etc\rancher" -Path @(
         "c:\etc\rancher\utils.psm1"
-        "c:\etc\rancher\cleanup.ps1"
         "c:\Windows\wins.exe"
     )
 } catch { }
@@ -287,6 +286,7 @@ catch
             "$($CATTLE_PREFIX_PATH)opt\bin\flanneld.exe"
             "$($CATTLE_PREFIX_PATH)etc\rancher\wins\wins-upgrade.exe"
             "$($CATTLE_PREFIX_PATH)etc\windows-exporter\windows-exporter.exe"
+            "$($CATTLE_PREFIX_PATH)etc\rancher\cleanup.ps1"
         )
         proxyPorts = @(
             9796
