@@ -207,7 +207,7 @@ const PowershellScript = `#Requires -RunAsAdministrator
 param (
     [Parameter()]
     [ValidateSet("Docker", "Kubernetes", "Firewall", "Rancher", "Network", "Paths")]
-    [string]
+    [string[]]
     $Tasks = ("Docker", "Kubernetes", "Firewall", "Rancher", "Network", "Paths")
 )
 
